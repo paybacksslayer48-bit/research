@@ -1,107 +1,82 @@
-import os
-import subprocess
-import sys
-
-# АВТО-УСТАНОВКА БИБЛИОТЕК (для тех, кто не хочет возиться с настройками)
-def install_dependencies():
-    required = {'beautifulsoup4', 'requests', 'pandas', 'lxml'}
-    try:
-        import bs4
-        import requests
-        import pandas
-    except ImportError:
-        st.info("Устанавливаю необходимые модули, подожди 10 секунд...")
-        subprocess.check_call([sys.executable, "-m", "pip", "install", *required])
-        st.success("Все готово! Сейчас страница перезагрузится.")
-        st.rerun()
-
 import streamlit as st
-
-# Запускаем проверку при старте
-if 'installed' not in st.session_state:
-    install_dependencies()
-    st.session_state['installed'] = True
-
-import requests
-from bs4 import BeautifulSoup
-import re
 import pandas as pd
+from duckduckgo_search import DDGS
+import re
 
-# НАСТРОЙКА ИНТЕРФЕЙСА
-st.set_page_config(page_title="Lead Finder 800$", layout="wide")
+# Настройка страницы под мобилки
+st.set_page_config(page_title="LEAD HUNTER 800$", layout="wide")
 
 st.markdown("""
     <style>
-    .stButton>button { width: 100%; height: 60px; font-size: 20px; background-color: #007bff; color: white; border-radius: 15px; }
-    .lead-card { border: 2px solid #f0f2f6; padding: 20px; border-radius: 15px; margin-bottom: 20px; background-color: white; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-    .status-bad { background-color: #ffcccc; color: #cc0000; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
-    .status-ok { background-color: #ccffcc; color: #006600; padding: 5px 10px; border-radius: 5px; font-weight: bold; }
-    .call-btn { background-color: #28a745; color: white; padding: 15px; text-align: center; text-decoration: none; display: block; border-radius: 10px; font-weight: bold; margin-top: 10px; font-size: 18px; }
+    .stButton>button { width: 100%; height: 60px; font-size: 20px; background-color: #2e7d32; color: white; border-radius: 12px; border: none; font-weight: bold; }
+    .lead-card { border: 2px solid #e0e0e0; padding: 15px; border-radius: 15px; margin-bottom: 15px; background-color: #ffffff; box-shadow: 2px 2px 10px rgba(0,0,0,0.05); }
+    .status-bad { color: #d32f2f; background: #ffebee; padding: 4px 8px; border-radius: 5px; font-weight: bold; display: inline-block; margin-bottom: 5px; }
+    .status-ok { color: #388e3c; background: #e8f5e9; padding: 4px 8px; border-radius: 5px; font-weight: bold; display: inline-block; margin-bottom: 5px; }
+    .call-link { background: #1976d2; color: white !important; text-align: center; padding: 12px; display: block; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 10px; }
     </style>
 """, unsafe_allow_html=True)
 
-st.title("🚀 Поиск клиентов на разработку сайтов")
+st.title("🎯 Поиск клиентов на сайты")
+st.write("Введи услугу и город. Я найду бизнесы и проверю их сайты.")
 
-query = st.text_input("Введите услугу и город (например: СТО Одесса)", placeholder="Кого ищем?")
+query = st.text_input("", placeholder="Напр: Стоматолог Одесса или СТО Киев")
 
-def check_site_quality(url):
-    if not url or url == "N/A":
-        return "❌ САЙТА НЕТ", "status-bad"
-    bad_platforms = ['business.site', 'wix.com', 'tilda.ws', 'linktree']
-    if any(plat in url for plat in bad_platforms):
-        return "⚠️ ГОВНО-САЙТ (КОНСТРУКТОР)", "status-bad"
-    return "✅ ЕСТЬ САЙТ", "status-ok"
+def check_site(url):
+    if not url or url == "N/A": return "🔴 НЕТ САЙТА", "status-bad"
+    bad_list = ['wix', 'tilda', 'business.site', 'facebook.com', 'instagram.com', 'linktr.ee']
+    if any(x in url.lower() for x in bad_list):
+        return "🟠 САЙТ-МУСОР (КОНСТРУКТОР)", "status-bad"
+    return "🟢 ЕСТЬ САЙТ", "status-ok"
 
-def search_leads(q):
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"}
-    # Поиск через Bing (он меньше банит, чем Google, при парсинге без ключей)
-    url = f"https://www.bing.com/search?q={q.replace(' ', '+')}+телефон+сайт"
-    
+def find_leads(q):
     leads = []
     try:
-        res = requests.get(url, headers=headers)
-        soup = BeautifulSoup(res.text, 'html.parser')
-        
-        for item in soup.find_all('li', class_='b_algo'):
-            title = item.find('h2').text if item.find('h2') else "Бизнес"
-            link = item.find('a')['href'] if item.find('a') else "N/A"
-            snippet = item.text
+        with DDGS() as ddgs:
+            # Ищем 20 результатов
+            results = ddgs.text(f"{q} телефон сайт", max_results=20)
             
-            # Поиск телефона регуляркой
-            phone_match = re.search(r'(\+?\d{1,3}[-.\s]?)?\(?\d{2,5}\)?[-.\s]?\d{3,4}[-.\s]?\d{4}', snippet)
-            phone = phone_match.group(0) if phone_match else "Нужно найти на странице"
-            
-            status_text, status_class = check_site_quality(link)
-            
-            leads.append({
-                "name": title,
-                "link": link,
-                "phone": phone,
-                "status": status_text,
-                "class": status_class
-            })
+            for r in results:
+                title = r.get('title', 'Бизнес')
+                link = r.get('href', 'N/A')
+                body = r.get('body', '')
+                
+                # Ищем номер телефона в тексте
+                phone_match = re.search(r'(\+38|0)\d{9,10}', body.replace(" ", "").replace("-", "").replace("(", "").replace(")", ""))
+                phone = phone_match.group(0) if phone_match else "Найди на сайте"
+                
+                status_text, status_class = check_site(link)
+                
+                leads.append({
+                    "name": title,
+                    "link": link,
+                    "phone": phone,
+                    "status": status_text,
+                    "class": status_class
+                })
     except Exception as e:
         st.error(f"Ошибка поиска: {e}")
     return leads
 
-if st.button("НАЙТИ ЛИДОВ"):
+if st.button("🔍 НАЙТИ КЛИЕНТОВ"):
     if query:
-        with st.spinner('Ищу тех, кто заплатит тебе $800...'):
-            results = search_leads(query)
+        with st.spinner('Копаюсь в базе данных...'):
+            results = find_leads(query)
             if results:
+                st.success(f"Найдено {len(results)} заведений")
                 for lead in results:
-                    st.markdown(f"""
-                    <div class="lead-card">
-                        <div style="font-size: 22px; font-weight: bold;">{lead['name']}</div>
-                        <div style="margin: 10px 0;">
-                            <span class="{lead['class']}">{lead['status']}</span>
+                    with st.container():
+                        st.markdown(f"""
+                        <div class="lead-card">
+                            <div style="font-size: 18px; font-weight: bold;">{lead['name']}</div>
+                            <div class="{lead['class']}">{lead['status']}</div>
+                            <div style="color: #555; font-size: 14px; overflow: hidden; text-overflow: ellipsis;">🌐 {lead['link']}</div>
+                            <div style="font-size: 20px; margin-top: 10px;">📞 <b>{lead['phone']}</b></div>
+                            <a href="tel:{lead['phone']}" class="call-link">ПОЗВОНИТЬ</a>
                         </div>
-                        <div style="color: #666;">🌐 {lead['link']}</div>
-                        <div style="font-size: 20px; margin: 10px 0;">📞 <b>{lead['phone']}</b></div>
-                        <a href="tel:{lead['phone']}" class="call-btn">📞 ПОЗВОНИТЬ</a>
-                    </div>
-                    """, unsafe_allow_html=True)
-                    # Кнопка для быстрого копирования
-                    st.code(f"{lead['name']} | {lead['phone']} | {lead['link']}")
+                        """, unsafe_allow_html=True)
+                        # Кнопка Копировать (встроенная в Streamlit)
+                        st.code(f"{lead['name']}\nТел: {lead['phone']}\nСайт: {lead['link']}")
             else:
-                st.warning("Ничего не нашли. Попробуй запрос покороче, например 'Окна Киев'.")
+                st.info("Ничего не нашли. Попробуй сменить город.")
+    else:
+        st.warning("Впиши что-то в поиск!")
